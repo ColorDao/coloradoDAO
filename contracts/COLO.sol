@@ -5,15 +5,16 @@ pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-contract Clr {
+contract COLO {
   string public constant name = "ColorDAO";
-  string public constant symbol = "Clr";
+  string public constant symbol = "COLO";
   uint8 public constant decimals = 18;
   uint256 public totalSupply = 0;
   mapping(address => bool) public minters;
   mapping(address => mapping(address => uint96)) internal allowances;
   mapping(address => uint96) internal balances;
   mapping(address => address) public delegates;
+  bool public transferBlocked;
 
   struct Checkpoint {
     uint32 fromBlock;
@@ -62,17 +63,18 @@ contract Clr {
     uint256 amount
   );
 
-  constructor(address account, address minter_) {
+  constructor(address account, address memberships) {
     balances[account] = uint96(totalSupply);
     emit Transfer(address(0), account, totalSupply);
-    minters[minter_] = true;
-    emit MinterAdded(address(0), minter_);
+    minters[memberships] = true;
+    emit MinterAdded(address(0), memberships);
+    transferBlocked = true;
   }
 
   function addMinter(address minter_) external {
     require(
       minters[msg.sender],
-      "Clr::addMinter: only the minter can change the minters"
+      "COLO::addMinter: only the minter can change the minters"
     );
     emit MinterAdded(msg.sender, minter_);
     minters[minter_] = true;
@@ -81,37 +83,54 @@ contract Clr {
   function removeMinter(address minter_) external {
     require(
       minters[msg.sender],
-      "Clr::addMinter: only the minter can change the minters "
+      "COLO::addMinter: only the minter can change the minters "
     );
     emit MinterRemoved(msg.sender, minter_);
     minters[minter_] = false;
   }
 
   function mint(address dst, uint256 rawAmount) external {
-    require(minters[msg.sender], "Clr::mint: only the minter can mint");
+    require(minters[msg.sender], "COLO::mint: only the minter can mint");
     require(
       dst != address(0),
-      "Clr::mint: cannot transfer to the zero address"
+      "COLO::mint: cannot transfer to the zero address"
     );
     require(
       dst != address(this),
-      "Clr::mint: cannot transfer to the Clr address"
+      "COLO::mint: cannot transfer to the COLO address"
     );
 
-    uint96 amount = safe96(rawAmount, "Clr::mint: amount exceeds 96 bits");
+    uint96 amount = safe96(rawAmount, "COLO::mint: amount exceeds 96 bits");
     totalSupply = safe96(
       SafeMath.add(totalSupply, amount),
-      "Clr::mint: totalSupply exceeds 96 bits"
+      "COLO::mint: totalSupply exceeds 96 bits"
     );
 
     balances[dst] = add96(
       balances[dst],
       amount,
-      "Clr::mint: transfer amount overflows"
+      "COLO::mint: transfer amount overflows"
     );
     emit Transfer(address(0), dst, amount);
 
     _moveDelegates(address(0), delegates[dst], amount);
+  }
+
+  function burn(address account, uint256 rawAmount) external {
+    require(minters[msg.sender], "COLO::mint: only the minter can burn");
+    require(account != address(0), "COLO: burn from the zero address");
+    uint96 amount = safe96(rawAmount, "COLO::mint: amount exceeds 96 bits");
+    balances[account] = sub96(
+      balances[account],
+      amount,
+      "COLO: burn amount exceeds balance"
+    );
+
+    totalSupply = safe96(
+      SafeMath.sub(totalSupply, amount),
+      "COLO::burn: totalSupply exceeds 96 bits"
+    );
+    emit Transfer(account, address(0), amount);
   }
 
   function allowance(address account, address spender)
@@ -127,7 +146,7 @@ contract Clr {
     if (rawAmount == uint256(-1)) {
       amount = uint96(-1);
     } else {
-      amount = safe96(rawAmount, "Clr::approve: amount exceeds 96 bits");
+      amount = safe96(rawAmount, "COLO::approve: amount exceeds 96 bits");
     }
 
     allowances[msg.sender][spender] = amount;
@@ -149,7 +168,7 @@ contract Clr {
     if (rawAmount == uint256(-1)) {
       amount = uint96(-1);
     } else {
-      amount = safe96(rawAmount, "Clr::permit: amount exceeds 96 bits");
+      amount = safe96(rawAmount, "COLO::permit: amount exceeds 96 bits");
     }
 
     bytes32 domainSeparator =
@@ -175,9 +194,9 @@ contract Clr {
     bytes32 digest =
       keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     address signatory = ecrecover(digest, v, r, s);
-    require(signatory != address(0), "Clr::permit: invalid signature");
-    require(signatory == owner, "Clr::permit: unauthorized");
-    require(block.timestamp <= deadline, "Clr::permit: signature expired");
+    require(signatory != address(0), "COLO::permit: invalid signature");
+    require(signatory == owner, "COLO::permit: unauthorized");
+    require(block.timestamp <= deadline, "COLO::permit: signature expired");
 
     allowances[owner][spender] = amount;
 
@@ -189,7 +208,7 @@ contract Clr {
   }
 
   function transfer(address dst, uint256 rawAmount) external returns (bool) {
-    uint96 amount = safe96(rawAmount, "Clr::transfer: amount exceeds 96 bits");
+    uint96 amount = safe96(rawAmount, "COLO::transfer: amount exceeds 96 bits");
     _transferTokens(msg.sender, dst, amount);
     return true;
   }
@@ -201,14 +220,14 @@ contract Clr {
   ) external returns (bool) {
     address spender = msg.sender;
     uint96 spenderAllowance = allowances[src][spender];
-    uint96 amount = safe96(rawAmount, "Clr::approve: amount exceeds 96 bits");
+    uint96 amount = safe96(rawAmount, "COLO::approve: amount exceeds 96 bits");
 
     if (spender != src && spenderAllowance != uint96(-1)) {
       uint96 newAllowance =
         sub96(
           spenderAllowance,
           amount,
-          "Clr::transferFrom: transfer amount exceeds spender allowance"
+          "COLO::transferFrom: transfer amount exceeds spender allowance"
         );
       allowances[src][spender] = newAllowance;
 
@@ -245,9 +264,12 @@ contract Clr {
     bytes32 digest =
       keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     address signatory = ecrecover(digest, v, r, s);
-    require(signatory != address(0), "Clr::delegateBySig: invalid signature");
-    require(nonce == nonces[signatory]++, "Clr::delegateBySig: invalid nonce");
-    require(block.timestamp <= expiry, "Clr::delegateBySig: signature expired");
+    require(signatory != address(0), "COLO::delegateBySig: invalid signature");
+    require(nonce == nonces[signatory]++, "COLO::delegateBySig: invalid nonce");
+    require(
+      block.timestamp <= expiry,
+      "COLO::delegateBySig: signature expired"
+    );
     return _delegate(signatory, delegatee);
   }
 
@@ -263,7 +285,7 @@ contract Clr {
   {
     require(
       blockNumber < block.number,
-      "Clr::getPriorVotes: not yet determined"
+      "COLO::getPriorVotes: not yet determined"
     );
 
     uint32 nCheckpoints = numCheckpoints[account];
@@ -312,24 +334,25 @@ contract Clr {
     address dst,
     uint96 amount
   ) internal {
+    require(!transferBlocked, "COLO::_transferTokens: Transfers are blocked");
     require(
       src != address(0),
-      "Clr::_transferTokens: cannot transfer from the zero address"
+      "COLO::_transferTokens: cannot transfer from the zero address"
     );
     require(
       dst != address(this),
-      "Clr::_transferTokens: cannot transfer to the Clr address"
+      "COLO::_transferTokens: cannot transfer to the COLO address"
     );
 
     balances[src] = sub96(
       balances[src],
       amount,
-      "Clr::_transferTokens: transfer amount exceeds balance"
+      "COLO::_transferTokens: transfer amount exceeds balance"
     );
     balances[dst] = add96(
       balances[dst],
       amount,
-      "Clr::_transferTokens: transfer amount overflows"
+      "COLO::_transferTokens: transfer amount overflows"
     );
     emit Transfer(src, dst, amount);
 
@@ -347,7 +370,7 @@ contract Clr {
         uint96 srcRepOld =
           srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
         uint96 srcRepNew =
-          sub96(srcRepOld, amount, "Clr::_moveVotes: vote amount underflows");
+          sub96(srcRepOld, amount, "COLO::_moveVotes: vote amount underflows");
         _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
       }
 
@@ -356,7 +379,7 @@ contract Clr {
         uint96 dstRepOld =
           dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
         uint96 dstRepNew =
-          add96(dstRepOld, amount, "Clr::_moveVotes: vote amount overflows");
+          add96(dstRepOld, amount, "COLO::_moveVotes: vote amount overflows");
         _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
       }
     }
@@ -371,7 +394,7 @@ contract Clr {
     uint32 blockNumber =
       safe32(
         block.number,
-        "Clr::_writeCheckpoint: block number exceeds 32 bits"
+        "COLO::_writeCheckpoint: block number exceeds 32 bits"
       );
 
     if (

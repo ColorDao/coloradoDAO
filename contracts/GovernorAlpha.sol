@@ -4,17 +4,13 @@ pragma solidity 0.7.5;
 
 pragma experimental ABIEncoderV2;
 
-contract GovernorAlpha {
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/SafeCast.sol";
+
+contract GovernorAlpha is Ownable {
+  using SafeCast for uint96;
   /// @notice The name of this contract
   string public constant name = "ColorDAO Governor Alpha";
-
-  function quorumVotes() public pure returns (uint256) {
-    return 400_000e18;
-  } // 4% of Clr
-
-  function proposalThreshold() public pure returns (uint256) {
-    return 100_000e18;
-  } // 1% of Clr
 
   function proposalMaxOperations() public pure returns (uint256) {
     return 10;
@@ -25,12 +21,12 @@ contract GovernorAlpha {
   } // 1 block
 
   function votingPeriod() public pure returns (uint256) {
-    return 17_280;
-  } // ~3 days in blocks (assuming 15s blocks)
+    return 40_320;
+  } // ~7 days in blocks (assuming 15s blocks)
 
   TimelockInterface public timelock;
 
-  ClrInterface public clr;
+  COLOInterface public COLO;
 
   uint256 public proposalCount;
 
@@ -48,6 +44,7 @@ contract GovernorAlpha {
     uint256 againstVotes;
     bool canceled;
     bool executed;
+    bool isPoll;
   }
 
   mapping(uint256 => mapping(address => Receipt)) public receipts;
@@ -91,7 +88,8 @@ contract GovernorAlpha {
     bytes[] calldatas,
     uint256 startBlock,
     uint256 endBlock,
-    string description
+    string description,
+    bool isPoll
   );
 
   event VoteCast(
@@ -107,9 +105,14 @@ contract GovernorAlpha {
 
   event ProposalExecuted(uint256 id);
 
-  constructor(address timelock_, address clr_) {
+  constructor(
+    address timelock_,
+    address COLO_,
+    address _governor
+  ) {
     timelock = TimelockInterface(timelock_);
-    clr = ClrInterface(clr_);
+    COLO = COLOInterface(COLO_);
+    transferOwnership(_governor);
   }
 
   function propose(
@@ -117,13 +120,9 @@ contract GovernorAlpha {
     uint256[] memory values,
     string[] memory signatures,
     bytes[] memory calldatas,
-    string memory description
-  ) public returns (uint256) {
-    require(
-      clr.getPriorVotes(msg.sender, sub256(block.number, 1)) >
-        proposalThreshold(),
-      "GovernorAlpha::propose: proposer votes below proposal threshold"
-    );
+    string memory description,
+    bool _isPoll
+  ) public onlyOwner returns (uint256) {
     require(
       targets.length == values.length &&
         targets.length == signatures.length &&
@@ -170,7 +169,8 @@ contract GovernorAlpha {
         forVotes: 0,
         againstVotes: 0,
         canceled: false,
-        executed: false
+        executed: false,
+        isPoll: _isPoll
       });
 
     proposals[newProposal.id] = newProposal;
@@ -185,7 +185,8 @@ contract GovernorAlpha {
       calldatas,
       startBlock,
       endBlock,
-      description
+      description,
+      _isPoll
     );
     return newProposal.id;
   }
@@ -196,18 +197,20 @@ contract GovernorAlpha {
       "GovernorAlpha::queue: proposal can only be queued if it is succeeded"
     );
     Proposal storage proposal = proposals[proposalId];
-    uint256 eta = add256(block.timestamp, timelock.delay());
-    for (uint256 i = 0; i < proposal.targets.length; i++) {
-      _queueOrRevert(
-        proposal.targets[i],
-        proposal.values[i],
-        proposal.signatures[i],
-        proposal.calldatas[i],
-        eta
-      );
+    if (!proposal.isPoll) {
+      uint256 eta = add256(block.timestamp, timelock.delay());
+      for (uint256 i = 0; i < proposal.targets.length; i++) {
+        _queueOrRevert(
+          proposal.targets[i],
+          proposal.values[i],
+          proposal.signatures[i],
+          proposal.calldatas[i],
+          eta
+        );
+      }
+      proposal.eta = eta;
+      emit ProposalQueued(proposalId, eta);
     }
-    proposal.eta = eta;
-    emit ProposalQueued(proposalId, eta);
   }
 
   function _queueOrRevert(
@@ -253,11 +256,6 @@ contract GovernorAlpha {
     );
 
     Proposal storage proposal = proposals[proposalId];
-    require(
-      clr.getPriorVotes(proposal.proposer, sub256(block.number, 1)) <
-        proposalThreshold(),
-      "GovernorAlpha::cancel: proposer above threshold"
-    );
 
     proposal.canceled = true;
     for (uint256 i = 0; i < proposal.targets.length; i++) {
@@ -308,8 +306,8 @@ contract GovernorAlpha {
     } else if (block.number <= proposal.endBlock) {
       return ProposalState.Active;
     } else if (
-      proposal.forVotes <= proposal.againstVotes ||
-      proposal.forVotes < quorumVotes()
+      proposal.forVotes <= proposal.againstVotes
+      //|| proposal.forVotes < quorumVotes()
     ) {
       return ProposalState.Defeated;
     } else if (proposal.eta == 0) {
@@ -372,7 +370,7 @@ contract GovernorAlpha {
       receipt.hasVoted == false,
       "GovernorAlpha::_castVote: voter already voted"
     );
-    uint96 votes = clr.getPriorVotes(voter, proposal.startBlock);
+    uint96 votes = COLO.getPriorVotes(voter, proposal.startBlock);
 
     if (support) {
       proposal.forVotes = add256(proposal.forVotes, votes);
@@ -382,9 +380,20 @@ contract GovernorAlpha {
 
     receipt.hasVoted = true;
     receipt.support = support;
-    receipt.votes = votes;
+    receipt.votes = sqrt(votes); // Here we can add quadratic vote
+
+    COLO.burn(voter, votes);
 
     emit VoteCast(voter, proposalId, support, votes);
+  }
+
+  function sqrt(uint96 x) public pure returns (uint96 y) {
+    uint96 z = (x + 1) / 2;
+    y = x;
+    while (z < y) {
+      y = z;
+      z = (x / z + z) / 2;
+    }
   }
 
   function add256(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -441,9 +450,11 @@ interface TimelockInterface {
   ) external payable returns (bytes memory);
 }
 
-interface ClrInterface {
+interface COLOInterface {
   function getPriorVotes(address account, uint256 blockNumber)
     external
     view
     returns (uint96);
+
+  function burn(address account, uint256 rawAmount) external;
 }
