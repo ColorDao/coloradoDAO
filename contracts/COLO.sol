@@ -66,6 +66,7 @@ contract COLO {
   constructor(address account, address memberships) {
     balances[account] = uint96(totalSupply);
     emit Transfer(address(0), account, totalSupply);
+    minters[account] = true;
     minters[memberships] = true;
     emit MinterAdded(address(0), memberships);
     transferBlocked = true;
