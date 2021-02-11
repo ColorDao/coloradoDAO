@@ -13,6 +13,7 @@ const governance: DeployFunction = async function (hre: HardhatRuntimeEnvironmen
 		const namedAccounts = await hre.getNamedAccounts();
 		const threeDays = 259200;
 		const [owner] = await ethers.getSigners();
+		const governorOwner = process.env.GOVERNOR;
 		let nonce = await owner.getTransactionCount();
 		const coloAddress = ethers.utils.getContractAddress({
 			from: namedAccounts.deployer,
@@ -34,10 +35,19 @@ const governance: DeployFunction = async function (hre: HardhatRuntimeEnvironmen
 			nonce: nonce++,
 		});
 
-		// TODO: POS as minter
+		const PointOfSaleAddress = ethers.utils.getContractAddress({
+			from: namedAccounts.deployer,
+			nonce: nonce++,
+		});
+
+		const ProofOfActionAddress = ethers.utils.getContractAddress({
+			from: namedAccounts.deployer,
+			nonce: nonce++,
+		});
+
 		const coloDeployment = await deployments.deploy("COLO", {
 			from: namedAccounts.deployer,
-			args: [namedAccounts.deployer, membershipsAddress],
+			args: [governorOwner, membershipsAddress, PointOfSaleAddress, ProofOfActionAddress],
 		});
 
 		log(`COLO deployed at ${coloDeployment.address} for ${coloDeployment.receipt?.gasUsed}`);
@@ -53,7 +63,7 @@ const governance: DeployFunction = async function (hre: HardhatRuntimeEnvironmen
 
 		const governorDeployment = await deployments.deploy("GovernorAlpha", {
 			from: namedAccounts.deployer,
-			args: [timelockAddress, coloAddress, namedAccounts.deployer],
+			args: [timelockAddress, coloAddress, governorOwner],
 		});
 
 		log(
@@ -62,12 +72,28 @@ const governance: DeployFunction = async function (hre: HardhatRuntimeEnvironmen
 
 		const membershipsDeployment = await deployments.deploy("Memberships", {
 			from: namedAccounts.deployer,
-			args: [TOKEN_URI, namedAccounts.deployer],
+			args: [TOKEN_URI, governorOwner, coloAddress],
 		});
 
 		log(
 			`Memberships deployed at ${membershipsDeployment.address} for ${membershipsDeployment.receipt?.gasUsed}`
 		);
+
+		const posReward = ethers.utils.parseEther("1");
+
+		const posDeployment = await deployments.deploy("PointOfSale", {
+			from: namedAccounts.deployer,
+			args: [coloAddress, membershipsAddress, governorOwner, posReward],
+		});
+
+		log(`posDeployment deployed at ${posDeployment.address} for ${posDeployment.receipt?.gasUsed}`);
+
+		const powDeployment = await deployments.deploy("Memberships", {
+			from: namedAccounts.deployer,
+			args: [coloAddress, membershipsAddress, governorOwner],
+		});
+
+		log(`powDeployment deployed at ${powDeployment.address} for ${powDeployment.receipt?.gasUsed}`);
 
 		if (
 			governorDeployment.address === governorAddress &&

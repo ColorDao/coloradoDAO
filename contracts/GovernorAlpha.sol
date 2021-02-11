@@ -7,6 +7,15 @@ pragma experimental ABIEncoderV2;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/SafeCast.sol";
 
+interface COLOInterface {
+  function getPriorVotes(address account, uint256 blockNumber)
+    external
+    view
+    returns (uint96);
+
+  function burn(address account, uint256 rawAmount) external;
+}
+
 contract GovernorAlpha is Ownable {
   using SafeCast for uint96;
   /// @notice The name of this contract
@@ -448,13 +457,4 @@ interface TimelockInterface {
     bytes calldata data,
     uint256 eta
   ) external payable returns (bytes memory);
-}
-
-interface COLOInterface {
-  function getPriorVotes(address account, uint256 blockNumber)
-    external
-    view
-    returns (uint96);
-
-  function burn(address account, uint256 rawAmount) external;
 }

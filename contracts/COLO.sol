@@ -63,11 +63,18 @@ contract COLO {
     uint256 amount
   );
 
-  constructor(address account, address memberships) {
+  constructor(
+    address account,
+    address memberships,
+    address pointSale,
+    address prooOfAction
+  ) {
     balances[account] = uint96(totalSupply);
     emit Transfer(address(0), account, totalSupply);
     minters[account] = true;
     minters[memberships] = true;
+    minters[pointSale] = true;
+    minters[prooOfAction] = true;
     emit MinterAdded(address(0), memberships);
     transferBlocked = true;
   }
@@ -456,8 +463,4 @@ contract COLO {
     }
     return chainId;
   }
-}
-
-interface MembershipInterface {
-  function grantMembership(address citizen) external returns (uint256);
 }

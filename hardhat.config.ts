@@ -9,6 +9,7 @@ import "@nomiclabs/hardhat-waffle";
 import "@nomiclabs/hardhat-ethers";
 import "hardhat-deploy";
 import "@nomiclabs/hardhat-etherscan";
+import "hardhat-deploy-ethers";
 
 const mnemonic = process.env.MNENOMIC as string;
 const ganacheMnemonic = process.env.GANACHEMNENOMIC as string;
