@@ -54,6 +54,7 @@ contract GovernorAlpha is Ownable {
     bool canceled;
     bool executed;
     bool isPoll;
+    string description;
   }
 
   mapping(uint256 => mapping(address => Receipt)) public receipts;
@@ -129,7 +130,7 @@ contract GovernorAlpha is Ownable {
     uint256[] memory values,
     string[] memory signatures,
     bytes[] memory calldatas,
-    string memory description,
+    string memory _description,
     bool _isPoll
   ) public onlyOwner returns (uint256) {
     require(
@@ -179,7 +180,8 @@ contract GovernorAlpha is Ownable {
         againstVotes: 0,
         canceled: false,
         executed: false,
-        isPoll: _isPoll
+        isPoll: _isPoll,
+        description: _description
       });
 
     proposals[newProposal.id] = newProposal;
@@ -194,7 +196,7 @@ contract GovernorAlpha is Ownable {
       calldatas,
       startBlock,
       endBlock,
-      description,
+      _description,
       _isPoll
     );
     return newProposal.id;
