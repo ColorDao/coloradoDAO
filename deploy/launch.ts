@@ -88,7 +88,7 @@ const governance: DeployFunction = async function (hre: HardhatRuntimeEnvironmen
 
 		log(`posDeployment deployed at ${posDeployment.address} for ${posDeployment.receipt?.gasUsed}`);
 
-		const powDeployment = await deployments.deploy("Memberships", {
+		const powDeployment = await deployments.deploy("ProofOfAction", {
 			from: namedAccounts.deployer,
 			args: [coloAddress, membershipsAddress, governorOwner],
 		});

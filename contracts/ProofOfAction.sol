@@ -12,7 +12,7 @@ interface Membership {
   function balanceOf(address account) external view returns (uint256);
 }
 
-contract ProofOfWork is Ownable {
+contract ProofOfAction is Ownable {
   using Counters for Counters.Counter;
   Counters.Counter public proofCounts;
   Counters.Counter public requestsCount;

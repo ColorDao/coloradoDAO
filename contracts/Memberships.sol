@@ -16,7 +16,7 @@ contract Memberships is ERC721, Ownable {
   uint256 public proposalCount;
   COLOInterface public COLO;
 
-  uint256 reward = 1 ether;
+  uint256 reward = 10 ether;
 
   struct Proposal {
     uint256 id;
@@ -42,7 +42,7 @@ contract Memberships is ERC721, Ownable {
 
   function requestMembership(string memory _did) public {
     uint256 latestProposalId = latestProposalIds[msg.sender];
-    require(latestProposalId != 0, "One live proposal per proposer");
+    require(latestProposalId == 0, "One live proposal per proposer");
     proposalCount++;
     Proposal memory newProposal =
       Proposal({
